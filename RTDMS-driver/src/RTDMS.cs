@@ -168,10 +168,15 @@ namespace viceroy
 
                 // verify that the user input is valid
                 if (Int32.TryParse(pollingRateRaw, out int pollingRate)) {
-                    // set the TransitInterval variable with value read from the user
-                    TransmitInterval = pollingRate;
-                    // write a message on the console (STDOUT), indicating the messaage rate has been updated
-                    Console.WriteLine($"Polling rate set to {pollingRate} ms");
+                    if (pollingRate < 1) {
+                        Console.WriteLine("Polling rate must be greater than 1ms");
+                    } else {
+                        // set the TransitInterval variable with value read from the user
+                        TransmitInterval = pollingRate;
+                        // write a message on the console (STDOUT), indicating the messaage rate has been updated
+                        Console.WriteLine($"Polling rate set to {pollingRate}ms");
+                    }
+
                 } else {
                     Console.WriteLine($"Unable to parse '{pollingRateRaw}'");
                 }
@@ -181,37 +186,26 @@ namespace viceroy
         }
 
          /*  complete this function */
-        void SendAzureCompatibleTempHumMessage(string device_id, double temp, double hum)
+        async void SendAzureCompatibleTempMessage(string device_id, double temp, double press)
         {
-            // 1.  capture the telemetry in an instance of the telemetry model variable
+            // capture the telemetry in an instance of the telemetry model variable
             Telem telemetryDataPoint = new Telem
             {
                 deviceId = device_id,
                 temperature = temp,
-                humidity = hum,
+                pressure = press,
                 messageId = transmitCount++
             };
 
-            // *** 2.  write the code to Create JSON message: serialize the telemetry data
-            // var telemetryDataString =
+            // with help from: https://microsoft.github.io/AzureTipsAndTricks/blog/tip114.html
+            // serialize and encode data point to UTF-8 bytes
+            byte[] telemetryDataBytes = JsonSerializer.SerializeToUtf8Bytes(telemetryDataPoint);
 
-            // *** 3. write the code to Encode the serialized object using UTF-8 so it can be parsed by IoT Hub when
-            //         processing messaging rules.
-
-            // *** 4. write code to Send the message to the IoT hub.
+            // build Azure message and send
+            Microsoft.Azure.Devices.Client.Message m = new Microsoft.Azure.Devices.Client.Message();
+            await hub_client.SendDeviceToCloudMessagesAsync(m);
 
             // Console.WriteLine(string.Format("[{0}] {1}", transmitCount, telemetryDataString));
-
-            /* Note: use this online resource to complete 1-4 of thgs function:
-            https://github.com/Azure/azure-iot-sdk-csharp/blob/main/iothub/device/samples/getting%20started/SimulatedDevice/Program.cs
-
-
-            /*  Exameple Building raw messages (don't use this):
-             string message_template = string.Format("{\"messageId\":{0},\"deviceId\":\"{1}\",\"temperature\":{2},\"humidity\":{3}}", ++msgCount, device_id,  temp, hum );
-            Microsoft.Azure.Devices.Client.Message m = new Microsoft.Azure.Devices.Client.Message(Encoding.ASCII.GetBytes(message_template));
-            iotClient.SendDeviceToCloudMessagesAsync(m).Wait();
-            Debug.WriteLine(message_template);
-            */
         }
 
         public void TransmitTelemety()
@@ -227,7 +221,7 @@ namespace viceroy
                     gpio.Write(LED_Pin, PinValue.High);
 
                     // send telemetry to Azure IoT Hub
-                    SendAzureCompatibleTempHumMessage(Settings.DeviceId, telem.Item1, telem.Item2);
+                    SendAzureCompatibleTempMessage(Settings.DeviceId, telem.Item1, telem.Item2);
 
                     // thread acquires the lock, enters the  critcal section
                     // Note see resource: https://www.c-sharpcorner.com/UploadFile/de41d6/monitor-and-lock-in-C-Sharp/
@@ -237,7 +231,7 @@ namespace viceroy
                         // flash the transmit LED, turn on
                         gpio.Write(LED_Pin, PinValue.Low);
 
-                        // sleep for the for duration od TransmitInterval
+                        // sleep for the for duration of TransmitInterval
                         Thread.Sleep(TransmitInterval);
                     }
 

@@ -4,7 +4,7 @@
 // This file implements the primary RDTMS driver code functionality
 // sources:  derived from original example by Cam Soper: https://www.linkedin.com/in/camthegeek
 
-// MQTT / Security refs 
+// MQTT / Security refs
 // IOT Hub Security: https://docs.microsoft.com/en-us/azure/iot-hub/iot-concepts-and-iot-hub#device-identity-and-authentication
 // MQTT:  https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-mqtt-support
 
@@ -28,14 +28,14 @@ namespace viceroy
         private I2cConnectionSettings i2cSettings;
         private I2cDevice i2cDevice;
         private GpioController gpio;
-        private Bme280 bme280;
+        private Bmp280 bmp280;
         private LCDWriter lcd_writer;
         private IotHubClient hub_client;
         private Task driverTask;
         private Task transmitTask;
         private object transmitLockObj;
         private CancellationTokenSource ctsTransmitTelem;
-        
+
         // properties
         public RDTMS_Settings Settings { get; set; }
         public int HVAC_Pin { get; set; }
@@ -44,7 +44,7 @@ namespace viceroy
 
         int transmitCount = 0;
 
-        // constructor 
+        // constructor
         public RTDMS_Driver()
         {
             try
@@ -58,18 +58,18 @@ namespace viceroy
                 // Get values from the appsettings.json configuration given their key and target value type.
                 Settings = config.GetRequiredSection("Settings").Get<RDTMS_Settings>();
 
-                // set the HVAC and LED GPIO pins 
+                // set the HVAC and LED GPIO pins
                 HVAC_Pin = Settings.HVACPin;
                 LED_Pin = Settings.LEDPin;
 
                 // Get a reference to a device on the I2C bus
-                i2cSettings = new I2cConnectionSettings(1, Bme280.DefaultI2cAddress);
+                i2cSettings = new I2cConnectionSettings(1, Bmp280.DefaultI2cAddress);
 
-                // initialize the device (instance) using, the BME280 default bus address
+                // initialize the device (instance) using, the Bmp280 default bus address
                 i2cDevice = I2cDevice.Create(i2cSettings);
 
-                // Finally, create an instance of BME280, using device settings configured above)
-                bme280 = new Bme280(i2cDevice);
+                // Finally, create an instance of Bmp280, using device settings configured above)
+                bmp280 = new Bmp280(i2cDevice);
 
                 // Initialize the GPIO controller for communication with Rasspberry Pi, using logical pin numbering scheme
                 gpio = new GpioController(PinNumberingScheme.Logical);
@@ -113,16 +113,19 @@ namespace viceroy
             }
         }
 
-        /* complete this function */
-        public (double, double, double) ReadBME280()
+        public (double, double) ReadBmp280()
         {
-            // *** 1. write the code to Read the BME280 sensor, and return 3-tuple (temp, hum, pressure)   
-            double temperatureF, humidityPercent, decapascals;
-            temperatureF = humidityPercent = decapascals = 0.0;
-            return (temperatureF, humidityPercent, decapascals);
+            double temperatureF, hectopascals;
+            Bmp280ReadResult readResult = bmp280.Read();
+
+            // get double value for each necessary measurement
+            temperatureF = readResult.Temperature.Value.DegreesFahrenheit;
+            hectopascals = readResult.Pressure.Value.Hectopascals;
+
+            return (temperatureF, hectopascals);
         }
 
-        // this a cleanup function, runs when shutting thge device down
+        // this a cleanup function, runs when shutting the device down
         public void HandleCloseCommmand()
         {
             if (HVAC_On)
@@ -149,23 +152,29 @@ namespace viceroy
         void UpdateSendInterval()
         {
             // this is a basic lock called a monitor (synchonization primative --critical section) used to guard concurrent access to data
-            // sharted between threads. In this case, the data transmission rate variable: "TransmitInterval" 
+            // sharted between threads. In this case, the data transmission rate variable: "TransmitInterval"
 
             // Note see resource: https://www.c-sharpcorner.com/UploadFile/de41d6/monitor-and-lock-in-C-Sharp/
             //                    https://dotnettutorials.net/lesson/multithreading-using-monitor/
-            
-            // thread acquires the lock, enters the  critcal section  
+
+            // thread acquires the lock, enters the  critcal section
             lock (transmitLockObj)
             {
                 // *** thread is with critical section  ***
-                // write the code to perfrom the following steps...
-                
-                /* 1. prompt user for new interval rate (in milliseconds (ms) e.g. 1 sec == 1000 ms)
-                   2. Read the new the rate from the user via command line (STDIN)
-                   3.  verify what the user input is valid 
-                   4.  set the TransitInterval variable with value read from the user
-                   5. write a message on the console (STDOUT), indicating the messaage rate has been updated
-                */ 
+                // prompt user for new interval rate (in milliseconds (ms) e.g. 1 sec == 1000 ms)
+                Console.Write("New polling rate (ms)? ");
+                // read the new the rate from the user via command line (STDIN)
+                string pollingRateRaw = Console.ReadLine();
+
+                // verify that the user input is valid
+                if (Int32.TryParse(pollingRateRaw, out int pollingRate)) {
+                    // set the TransitInterval variable with value read from the user
+                    TransmitInterval = pollingRate;
+                    // write a message on the console (STDOUT), indicating the messaage rate has been updated
+                    Console.WriteLine($"Polling rate set to {pollingRate} ms");
+                } else {
+                    Console.WriteLine($"Unable to parse '{pollingRateRaw}'");
+                }
 
                 // *** note: thread exiting the critical section
             }
@@ -173,7 +182,7 @@ namespace viceroy
 
          /*  complete this function */
         void SendAzureCompatibleTempHumMessage(string device_id, double temp, double hum)
-        {    
+        {
             // 1.  capture the telemetry in an instance of the telemetry model variable
             Telem telemetryDataPoint = new Telem
             {
@@ -184,19 +193,19 @@ namespace viceroy
             };
 
             // *** 2.  write the code to Create JSON message: serialize the telemetry data
-            // var telemetryDataString = 
-                   
+            // var telemetryDataString =
+
             // *** 3. write the code to Encode the serialized object using UTF-8 so it can be parsed by IoT Hub when
             //         processing messaging rules.
 
             // *** 4. write code to Send the message to the IoT hub.
-           
+
             // Console.WriteLine(string.Format("[{0}] {1}", transmitCount, telemetryDataString));
 
             /* Note: use this online resource to complete 1-4 of thgs function:
             https://github.com/Azure/azure-iot-sdk-csharp/blob/main/iothub/device/samples/getting%20started/SimulatedDevice/Program.cs
 
-            
+
             /*  Exameple Building raw messages (don't use this):
              string message_template = string.Format("{\"messageId\":{0},\"deviceId\":\"{1}\",\"temperature\":{2},\"humidity\":{3}}", ++msgCount, device_id,  temp, hum );
             Microsoft.Azure.Devices.Client.Message m = new Microsoft.Azure.Devices.Client.Message(Encoding.ASCII.GetBytes(message_template));
@@ -212,7 +221,7 @@ namespace viceroy
             {
                 while (!ctsTransmitTelem.IsCancellationRequested)
                 {
-                    var telem = ReadBME280();
+                    var telem = ReadBmp280();
 
                     //flash the transmit LED, turn on
                     gpio.Write(LED_Pin, PinValue.High);
@@ -227,7 +236,7 @@ namespace viceroy
                     {
                         // flash the transmit LED, turn on
                         gpio.Write(LED_Pin, PinValue.Low);
-                        
+
                         // sleep for the for duration od TransmitInterval
                         Thread.Sleep(TransmitInterval);
                     }
@@ -241,30 +250,25 @@ namespace viceroy
             });
         }
 
-        bool IsTransmiting()
+        bool IsTransmitting()
         {
             if(transmitTask != null)
                return !transmitTask.IsCompleted;
             return false;
         }
 
-        // *** Complete this function *** /
         public void External_HVAC(bool onoff, string LCD_message)
         {
+            // set public bool HVAC_On to new value
             HVAC_On = onoff;
-            if(HVAC_On)
-            {
-                 //  *** 1. write the the code to turn On the HVAC
-                Console.WriteLine("HVAC On not implementated");
-            }
-            else
-            {
-                //  *** 2. write the the code to turn On the HVAC
-                 gpio.Write(HVAC_Pin, PinValue.Low);
-            }
+            // set HVAC and LED pins to High or Low for True or False, respectively
+            PinValue pinHighLow = HVAC_On ? PinValue.High : PinValue.Low;
+            gpio.Write(HVAC_Pin, pinHighLow);
+            gpio.Write(LED_Pin, pinHighLow);
 
+            // write message to both Console and LCD
             Console.WriteLine($"{LCD_message}");
-            //  *** 3. write the code to display the message on the LCD character display 
+            lcd_writer.WriteMessage(LCD_message);
         }
 
         bool ExecuteCommand(string commandText)
@@ -283,13 +287,13 @@ namespace viceroy
                         {
                            HVAC_msg = "HVAC On";
                         }
-                       
-                        External_HVAC(HVAC_On, HVAC_msg);    
+
+                        External_HVAC(HVAC_On, HVAC_msg);
                     }
                     break;
                 case "t":
                     {
-                        if (IsTransmiting())
+                        if (IsTransmitting())
                         {
                             ctsTransmitTelem.Cancel();
                             transmitTask.Wait();
@@ -305,14 +309,16 @@ namespace viceroy
                     break;
                 case "s":
                     {
-                        var output = ReadBME280();
+                        var output = ReadBmp280();
                         Console.WriteLine("DEVICE STATUS");
                         Console.WriteLine("-------------");
                         Console.WriteLine($"HVAC: {(HVAC_On ? "ON" : "OFF")}");
                         Console.WriteLine($"Temperature: {output.Item1:0.#}dF");
-                        Console.WriteLine($"Relative humidity: {output.Item2:#.##}%");
-                        string lcd_msg = $"T:{output.Item1:0.#}dF " + $"H:{output.Item2:#.#}%";
+                        Console.WriteLine($"Pressure: {output.Item2:#.##}hPa");
 
+                        DateTime currentDateTime = DateTime.Now;
+                        string formattedDateTime = currentDateTime.ToString("HH:mm:ss");
+                        string lcd_msg = $"{formattedDateTime}\nT:{output.Item1:0.#}F\nP:{output.Item2:#.#}hPa";
                         lcd_writer.WriteMessage(lcd_msg);
                     }
                     break;
@@ -326,11 +332,11 @@ namespace viceroy
         void DisplayMenu()
         {
             string hvac_status = HVAC_On ? "Off" : "On";
-            string transmit_status = (!IsTransmiting()) ? "Transmit" : "Stop Transmiting";
+            string transmit_status = (!IsTransmitting()) ? "Transmit" : "Stop Transmiting";
             Console.WriteLine("---------------");
             Console.WriteLine("RDTMS v1.0 Menu");
             Console.WriteLine("---------------");
-            Console.WriteLine("\"S\": - display current temperature/humidity");
+            Console.WriteLine("\"S\": - display current temperature/pressure");
             Console.WriteLine($"\"H\": - turn HVAC {hvac_status}");
             Console.WriteLine($"\"T\": - {transmit_status} Telemetry To Azure IoT Hub service");
             Console.WriteLine("\"I\": - Change telemetry transmit interval (1000ms -default )");
@@ -344,7 +350,7 @@ namespace viceroy
             // see background info here: https://dotnettutorials.net/lesson/asynchronous-programming-in-csharp/
             driverTask = Task.Run(() =>
             {
-                // prior to displaying the menu for the first time connect, established TLS connection to Azure IoT Cloud 
+                // prior to displaying the menu for the first time connect, established TLS connection to Azure IoT Cloud
                 hub_client.Start();
 
                 if (hub_client.Connected)
@@ -380,11 +386,11 @@ namespace viceroy
             driverTask.Wait();
         }
 
-        // diespose frees any native platform (non CLR managed) resources
+        // dispose frees any native platform (non CLR managed) resources
         public void Dispose()
         {
-            if (bme280 != null)
-                bme280.Dispose();
+            if (bmp280 != null)
+                bmp280.Dispose();
 
             if (lcd_writer != null)
                 lcd_writer.Dispose();

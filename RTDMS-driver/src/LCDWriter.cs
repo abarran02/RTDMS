@@ -1,7 +1,7 @@
 // Description: Interim (version 1) IoT bootcamp development project (Remote Data Center Monitoring) prototype
 // Skill Level:  university engineering or comp sci ( sophomore and higher)
 
-// LCDWriter is a utility class for displaying messages on LCD character displays 
+// LCDWriter is a utility class for displaying messages on LCD character displays
 
 using Iot.Device.CharacterLcd;
 using Iot.Device.Pcx857x;
@@ -18,7 +18,7 @@ namespace viceroy
         Lcd2004 lcd;
 
         int line_len_;
-        int max_lines_; 
+        int max_lines_;
 
         public LCDWriter(int busId, int deviceAddress, int maxLines, int lineLen)
         {
@@ -31,7 +31,7 @@ namespace viceroy
                                     backlightBrightness: 0.1f,
                                     readWritePin: 1,
                                     controller: new GpioController(PinNumberingScheme.Logical, driver));
-        
+
             line_len_ = lineLen;
             max_lines_ = maxLines;
         }
@@ -44,15 +44,40 @@ namespace viceroy
 
             int line_num = 0;
             int startPos = 0;
-            for (line_num = 0; ((line_num < numLines - 1) && (line_num < max_lines_)); ++line_num)
+
+            string newlineCheck;
+            string[] splitLines;
+            bool lastLine = false;
+
+            // iterate over message to display lines
+            for (line_num = 0; line_num < max_lines_; ++line_num)
             {
-                WriteMessageLine(message.Substring(startPos,line_len_), line_num);
-                startPos += line_len_;
+                // if the remaining message is too short for a full line, it may be the last line
+                try {
+                    newlineCheck = message.Substring(startPos, line_len_);
+                } catch (ArgumentOutOfRangeException) {
+                    newlineCheck = message.Substring(startPos, message.Length-startPos);
+                    lastLine = true;
+                }
+
+                // check whether next line contains a newline character
+                if (newlineCheck.Contains("\n")) {
+                    splitLines = newlineCheck.Split("\n", 2);
+                    WriteMessageLine(splitLines[0], line_num);
+                    // line length plus consume newline
+                    startPos += splitLines[0].Length + 1;
+                    // no longer the last line
+                    lastLine = false;
+                } else {
+                    // otherwise write full line
+                    WriteMessageLine(newlineCheck, line_num);
+                    startPos += line_len_;
+                }
+
+                // end loop if this is the last line
+                if (lastLine) { break; }
             }
-
-            WriteMessageLine(message.Substring(startPos, message.Length-startPos), line_num);
         }
-
 
         public void WriteMessageLine(string message, int lineNum, int startPos = 0)
         {

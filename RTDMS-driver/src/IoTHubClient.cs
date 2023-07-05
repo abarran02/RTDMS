@@ -29,13 +29,13 @@ namespace viceroy
         }
 
         public void Start()
-        {          
+        {
             // Source: https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-dev-guide-sas?tabs=node
             //         https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-mqtt-support
 
             if (!Connected)
             {
-                // open the connection to the Azure IoT Hub 
+                // open the connection to the Azure IoT Hub
                 deviceClient.OpenAsync().Wait();
 
                 deviceClient.SetMethodHandlerAsync("ControlRelay", ControlRelay, null).Wait();
@@ -49,7 +49,7 @@ namespace viceroy
         public void Close()
         {
             if (Connected)
-            { 
+            {
                 deviceClient.CloseAsync().Wait();
                 Connected = false;
             }
@@ -59,7 +59,7 @@ namespace viceroy
         {
             Console.WriteLine(String.Format("method ControlRelay: {0}", methodRequest.DataAsJson));
             try
-            {       
+            {
                 // OnOffMethodData m = JsonConvert.DeserializeObject<OnOffMethodData>(methodRequest.DataAsJson);
                 OnOffMethodData status = JsonSerializer.Deserialize<OnOffMethodData>(methodRequest.DataAsJson);
                 _driver.External_HVAC(status.onoff, (status.onoff) ? "HVAC Remote On" : "HVAC_Remote Off");

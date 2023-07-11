@@ -8,10 +8,8 @@
 // IOT Hub Security: https://docs.microsoft.com/en-us/azure/iot-hub/iot-concepts-and-iot-hub#device-identity-and-authentication
 // MQTT:  https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-mqtt-support
 
-using System;
 using System.Device.Gpio;
 using System.Device.I2c;
-using System.Text;
 using System.Text.Json;
 using Iot.Device.Bmxx80;
 using Iot.Device.Bmxx80.ReadResult;
@@ -32,8 +30,10 @@ namespace viceroy
         private LCDWriter lcd_writer;
         private IotHubClient hub_client;
         private Task driverTask;
+        private Task lcdTask;
         private Task transmitTask;
         private object transmitLockObj;
+        private object lcdLockObj;
         private CancellationTokenSource ctsTransmitTelem;
 
         // properties
@@ -96,6 +96,7 @@ namespace viceroy
 
                 // critical section (lock), used for setting the interval rate
                 transmitLockObj = new Object();
+                lcdLockObj = new Object();
 
                 // set the default transmit interval (ms -- millseconds)
                 TransmitInterval = 1000;
@@ -103,8 +104,7 @@ namespace viceroy
                 // trap ctrl-c press
                 Console.CancelKeyPress += (s, e) =>
                 {
-                    Console.WriteLine("Choose menu option \"X\" to exit the program");
-                    e.Cancel = true;
+                    HandleCloseCommmand();
                 };
             }
             catch (Exception ex)
@@ -152,12 +152,12 @@ namespace viceroy
         void UpdateSendInterval()
         {
             // this is a basic lock called a monitor (synchonization primative --critical section) used to guard concurrent access to data
-            // sharted between threads. In this case, the data transmission rate variable: "TransmitInterval"
+            // shared between threads. In this case, the data transmission rate variable: "TransmitInterval"
 
             // Note see resource: https://www.c-sharpcorner.com/UploadFile/de41d6/monitor-and-lock-in-C-Sharp/
             //                    https://dotnettutorials.net/lesson/multithreading-using-monitor/
 
-            // thread acquires the lock, enters the  critcal section
+            // thread acquires the lock, enters the critcal section
             lock (transmitLockObj)
             {
                 // *** thread is with critical section  ***
@@ -167,17 +167,23 @@ namespace viceroy
                 string pollingRateRaw = Console.ReadLine();
 
                 // verify that the user input is valid
-                if (Int32.TryParse(pollingRateRaw, out int pollingRate)) {
-                    if (pollingRate < 1) {
+                if (Int32.TryParse(pollingRateRaw, out int pollingRate))
+                {
+                    if (pollingRate < 1)
+                    {
                         Console.WriteLine("Polling rate must be greater than 1ms");
-                    } else {
+                    }
+                    else
+                    {
                         // set the TransitInterval variable with value read from the user
                         TransmitInterval = pollingRate;
                         // write a message on the console (STDOUT), indicating the messaage rate has been updated
                         Console.WriteLine($"Polling rate set to {pollingRate}ms");
                     }
 
-                } else {
+                }
+                else
+                {
                     Console.WriteLine($"Unable to parse '{pollingRateRaw}'");
                 }
 
@@ -260,9 +266,15 @@ namespace viceroy
             gpio.Write(HVAC_Pin, pinHighLow);
             gpio.Write(LED_Pin, pinHighLow);
 
-            // write message to both Console and LCD
-            Console.WriteLine($"{LCD_message}");
-            lcd_writer.WriteMessage(LCD_message);
+            // lock LCD write to ensure message is shown for 5 seconds
+            lock (lcdLockObj)
+            {
+                // write message to both Console and LCD
+                Console.WriteLine($"{LCD_message}");
+                lcd_writer.WriteMessage(LCD_message);
+
+                Thread.Sleep(5000);
+            }
         }
 
         bool ExecuteCommand(string commandText)
@@ -309,11 +321,6 @@ namespace viceroy
                         Console.WriteLine($"HVAC: {(HVAC_On ? "ON" : "OFF")}");
                         Console.WriteLine($"Temperature: {output.Item1:0.#}dF");
                         Console.WriteLine($"Pressure: {output.Item2:#.##}hPa");
-
-                        DateTime currentDateTime = DateTime.Now;
-                        string formattedDateTime = currentDateTime.ToString("HH:mm:ss");
-                        string lcd_msg = $"{formattedDateTime}\nT:{output.Item1:0.#}F\nP:{output.Item2:#.#}hPa";
-                        lcd_writer.WriteMessage(lcd_msg);
                     }
                     break;
                 default:
@@ -333,15 +340,41 @@ namespace viceroy
             Console.WriteLine("\"S\": - display current temperature/pressure");
             Console.WriteLine($"\"H\": - turn HVAC {hvac_status}");
             Console.WriteLine($"\"T\": - {transmit_status} Telemetry To Azure IoT Hub service");
-            Console.WriteLine("\"I\": - Change telemetry transmit interval (1000ms -default )");
-            Console.WriteLine("\"X:\" - Close the  RDTMS driver");
+            Console.WriteLine("\"I\": - Change telemetry transmit interval (1000ms default)");
+            Console.WriteLine("\"X:\" - Close the RDTMS driver");
             Console.Write("Command:-> ");
+        }
+
+        void LcdUpdateTask()
+        {
+            // create a Task to update the LCD every 2 seconds
+            lcdTask = Task.Run(() =>
+            {
+                // run until the program ends
+                while (true)
+                {
+                    // lock LCD during write
+                    lock (lcdLockObj)
+                    {
+                        // read data from sensor and format string for LCD
+                        var output = ReadBmp280();
+                        DateTime currentDateTime = DateTime.Now;
+                        string formattedDateTime = currentDateTime.ToString("HH:mm:ss");
+                        string lcd_msg = $"{formattedDateTime}\nT:{output.Item1:0.#}F\nP:{output.Item2:#.#}hPa";
+                        lcd_writer.WriteMessage(lcd_msg);
+                    }
+
+                    Thread.Sleep(2000);
+                }
+            });
         }
 
         public void Start()
         {
             // create a Task to connect to asychronously to the IoT hub:
             // see background info here: https://dotnettutorials.net/lesson/asynchronous-programming-in-csharp/
+            LcdUpdateTask();
+
             driverTask = Task.Run(() =>
             {
                 // prior to displaying the menu for the first time connect, established TLS connection to Azure IoT Cloud
@@ -370,7 +403,7 @@ namespace viceroy
                 if (!hub_client.Connected)
                     Console.WriteLine("Disconnected from Azure Cloud");
                 else
-                    Console.WriteLine("Eror disconnecting from the Azure Cloud");
+                    Console.WriteLine("Error disconnecting from the Azure Cloud");
             });
         }
 

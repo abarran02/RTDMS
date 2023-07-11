@@ -5,7 +5,6 @@
 
 using Iot.Device.CharacterLcd;
 using Iot.Device.Pcx857x;
-using System;
 using System.Device.Gpio;
 using System.Device.I2c;
 
@@ -53,29 +52,35 @@ namespace viceroy
             for (line_num = 0; line_num < max_lines_; ++line_num)
             {
                 // if the remaining message is too short for a full line, it may be the last line
-                try {
+                try
+                {
                     newlineCheck = message.Substring(startPos, line_len_);
-                } catch (ArgumentOutOfRangeException) {
+                }
+                catch (ArgumentOutOfRangeException)
+                {
                     newlineCheck = message.Substring(startPos, message.Length-startPos);
                     lastLine = true;
                 }
 
                 // check whether next line contains a newline character
-                if (newlineCheck.Contains("\n")) {
+                if (newlineCheck.Contains("\n"))
+                {
                     splitLines = newlineCheck.Split("\n", 2);
                     WriteMessageLine(splitLines[0], line_num);
                     // line length plus consume newline
                     startPos += splitLines[0].Length + 1;
                     // no longer the last line
                     lastLine = false;
-                } else {
+                }
+                else
+                {
                     // otherwise write full line
                     WriteMessageLine(newlineCheck, line_num);
                     startPos += line_len_;
                 }
 
                 // end loop if this is the last line
-                if (lastLine) { break; }
+                if (lastLine) break;
             }
         }
 

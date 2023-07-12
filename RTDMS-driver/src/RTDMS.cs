@@ -208,7 +208,7 @@ namespace viceroy
             byte[] telemetryDataBytes = JsonSerializer.SerializeToUtf8Bytes(telemetryDataPoint);
 
             // build Azure message and send
-            Microsoft.Azure.Devices.Client.Message m = new Microsoft.Azure.Devices.Client.Message();
+            Microsoft.Azure.Devices.Client.Message m = new Microsoft.Azure.Devices.Client.Message(telemetryDataBytes);
             await hub_client.SendDeviceToCloudMessagesAsync(m);
 
             // Console.WriteLine(string.Format("[{0}] {1}", transmitCount, telemetryDataString));

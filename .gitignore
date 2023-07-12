@@ -134,6 +134,7 @@ _NCrunch*
 
 # RTDMS
 RTDMS-driver/src/appsettings.json
+local.settings.json
 
 # Logs
 logs

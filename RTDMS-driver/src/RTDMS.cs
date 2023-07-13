@@ -191,7 +191,6 @@ namespace viceroy
             }
         }
 
-         /*  complete this function */
         async void SendAzureCompatibleTempMessage(string device_id, double temp, double press)
         {
             // capture the telemetry in an instance of the telemetry model variable
@@ -210,8 +209,6 @@ namespace viceroy
             // build Azure message and send
             Microsoft.Azure.Devices.Client.Message m = new Microsoft.Azure.Devices.Client.Message(telemetryDataBytes);
             await hub_client.SendDeviceToCloudMessagesAsync(m);
-
-            // Console.WriteLine(string.Format("[{0}] {1}", transmitCount, telemetryDataString));
         }
 
         public void TransmitTelemety()
@@ -333,14 +330,14 @@ namespace viceroy
         void DisplayMenu()
         {
             string hvac_status = HVAC_On ? "Off" : "On";
-            string transmit_status = (!IsTransmitting()) ? "Transmit" : "Stop Transmiting";
+            string transmit_status = (!IsTransmitting()) ? "Transmit" : "Stop Transmitting";
             Console.WriteLine("---------------");
             Console.WriteLine("RDTMS v1.0 Menu");
             Console.WriteLine("---------------");
             Console.WriteLine("\"S\": - display current temperature/pressure");
             Console.WriteLine($"\"H\": - turn HVAC {hvac_status}");
             Console.WriteLine($"\"T\": - {transmit_status} Telemetry To Azure IoT Hub service");
-            Console.WriteLine("\"I\": - Change telemetry transmit interval (1000ms default)");
+            Console.WriteLine($"\"I\": - Change telemetry transmit interval (currently {TransmitInterval}ms)");
             Console.WriteLine("\"X:\" - Close the RDTMS driver");
             Console.Write("Command:-> ");
         }

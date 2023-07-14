@@ -1,33 +1,31 @@
-using System;
+using IoTHubTrigger = Microsoft.Azure.WebJobs.EventHubTriggerAttribute;
+
 using System.Net.Http;
-using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.EventHubs;
+using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Host;
 using Microsoft.Extensions.Logging;
 
 namespace viceroy
 {
     public class IotTrigger
     {
-        private readonly ILogger _logger;
+        private readonly ILogger log;
         int temperatureThreshold = 76;
         private static readonly HttpClient client = new HttpClient();
         // int minimumEmailInterval = 3600000; // minimum milliseconds between emails, no more than 30/day for IFTTT free tier
         public record ShortTelem(string deviceId, double temperature, double pressure); // IFTTT limits JSON payloads to 3 items
         string iftttUrl = System.Environment.GetEnvironmentVariable("IftttUrl", EnvironmentVariableTarget.Process);
 
-        public IotTrigger(ILoggerFactory loggerFactory)
-        {
-            _logger = loggerFactory.CreateLogger<IotTrigger>();
-        }
-
-        [Function("IotTrigger")]
-        public async Task Run([EventHubTrigger("messages/events", Connection="ConnectionString")] string[] input)
+        [FunctionName("IotTrigger")]
+        public async Task Run([IoTHubTrigger("messages/events", Connection="ConnectionString")] EventData message, ILogger log)
         {
             // capture the telemetry in an instance of the telemetry model variable
-            Telem? telemetryDataPoint = JsonSerializer.Deserialize<Telem>(input[0]);
+            var jsonPayload = Encoding.UTF8.GetString(message.Body.Array);
+            Telem? telemetryDataPoint = JsonSerializer.Deserialize<Telem>(jsonPayload);
 
             if (telemetryDataPoint.temperature > temperatureThreshold)
             {
@@ -51,7 +49,7 @@ namespace viceroy
             // check response code of IFTTT call
             if (response.IsSuccessStatusCode)
             {
-                _logger.LogInformation("Successfully sent webhook to IFTTT.");
+                log.LogInformation("Successfully sent webhook to IFTTT.");
             }
         }
     }

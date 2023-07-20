@@ -1,0 +1,11 @@
+services:
+  app:
+    build:
+      context: .
+      ssh: ["default"]
+    container_name: rtdms-dev
+    stdin_open: true
+    tty: true
+    ports:
+      - 3000:3000 # web app
+      - 10000:10000 # Azure client

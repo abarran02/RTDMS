@@ -23,6 +23,7 @@ namespace viceroy
     public class RTDMS_Driver : IDisposable
     {
         public bool HVAC_On = false;
+        public bool autoRelay = true;
         private I2cConnectionSettings i2cSettings;
         private I2cDevice i2cDevice;
         private GpioController gpio;
@@ -34,6 +35,7 @@ namespace viceroy
         private Task transmitTask;
         private object transmitLockObj;
         private object lcdLockObj;
+        private object tempLimitLockObj;
         private CancellationTokenSource ctsTransmitTelem;
 
         // properties
@@ -41,6 +43,7 @@ namespace viceroy
         public int HVAC_Pin { get; set; }
         public int LED_Pin { get; set; }
         public int TransmitInterval;
+        public int temperatureLimit = 77;
 
         int transmitCount = 0;
 
@@ -97,6 +100,7 @@ namespace viceroy
                 // critical section (lock), used for setting the interval rate
                 transmitLockObj = new Object();
                 lcdLockObj = new Object();
+                tempLimitLockObj = new Object();
 
                 // set the default transmit interval (ms -- millseconds)
                 TransmitInterval = 1000;
@@ -157,13 +161,13 @@ namespace viceroy
             // Note see resource: https://www.c-sharpcorner.com/UploadFile/de41d6/monitor-and-lock-in-C-Sharp/
             //                    https://dotnettutorials.net/lesson/multithreading-using-monitor/
 
-            // thread acquires the lock, enters the critcal section
+            // thread acquires the lock, enters the critical section
             lock (transmitLockObj)
             {
                 // *** thread is with critical section  ***
                 // prompt user for new interval rate (in milliseconds (ms) e.g. 1 sec == 1000 ms)
                 Console.Write("New polling rate (ms)? ");
-                // read the new the rate from the user via command line (STDIN)
+                // read the new rate from the user via command line (STDIN)
                 string pollingRateRaw = Console.ReadLine();
 
                 // verify that the user input is valid
@@ -177,10 +181,9 @@ namespace viceroy
                     {
                         // set the TransitInterval variable with value read from the user
                         TransmitInterval = pollingRate;
-                        // write a message on the console (STDOUT), indicating the messaage rate has been updated
+                        // write a message on the console (STDOUT), indicating the message rate has been updated
                         Console.WriteLine($"Polling rate set to {pollingRate}ms");
                     }
-
                 }
                 else
                 {
@@ -188,6 +191,37 @@ namespace viceroy
                 }
 
                 // *** note: thread exiting the critical section
+            }
+        }
+
+        void UpdateTemperatureLimit()
+        {
+            // prompt user for new temp limit
+            Console.Write("New temperature limit (deg F)? ");
+            // read new limit from user CLI
+            string tempLimitRaw = Console.ReadLine();
+
+            lock (tempLimitLockObj)
+            {
+                // verify that the user input is valid
+                if (Int32.TryParse(tempLimitRaw, out int tempLimitNew))
+                {
+                    if (tempLimitNew < 1)
+                    {
+                        Console.WriteLine("Temperature limit must be greater than 1ms");
+                    }
+                    else
+                    {
+                        // set the temperatureLimit variable with value read from the user
+                        temperatureLimit = tempLimitNew;
+                        // write a message on the console (STDOUT), indicating the new temp limit
+                        Console.WriteLine($"Temperature limit set to {tempLimitRaw}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"Unable to parse '{tempLimitRaw}'");
+                }
             }
         }
 
@@ -254,7 +288,7 @@ namespace viceroy
             return false;
         }
 
-        public void External_HVAC(bool onoff, string LCD_message)
+        public void External_HVAC(bool onoff, string LCD_message, bool writeToConsole = true)
         {
             // set public bool HVAC_On to new value
             HVAC_On = onoff;
@@ -267,7 +301,10 @@ namespace viceroy
             lock (lcdLockObj)
             {
                 // write message to both Console and LCD
-                Console.WriteLine($"{LCD_message}");
+                if (writeToConsole)
+                {
+                    Console.WriteLine($"{LCD_message}");
+                }
                 lcd_writer.WriteMessage(LCD_message);
 
                 Thread.Sleep(5000);
@@ -278,11 +315,12 @@ namespace viceroy
         {
             switch (commandText.ToLower())
             {
+                // close driver
                 case "x":
                     Console.WriteLine("Exiting RTDMS...");
                     HandleCloseCommmand();
                     return true;
-
+                // toggle HVAC
                 case "h":
                     {
                         string HVAC_msg = "HVAC Off";
@@ -294,6 +332,7 @@ namespace viceroy
                         External_HVAC(HVAC_On, HVAC_msg);
                     }
                     break;
+                // toggle Azure transmit
                 case "t":
                     {
                         if (IsTransmitting())
@@ -307,9 +346,11 @@ namespace viceroy
                         }
                     }
                     break;
+                // change Azure transmit interval
                 case "i":
                     UpdateSendInterval();
                     break;
+                // display device status
                 case "s":
                     {
                         var output = ReadBmp280();
@@ -319,6 +360,17 @@ namespace viceroy
                         Console.WriteLine($"Temperature: {output.Item1:0.#}dF");
                         Console.WriteLine($"Pressure: {output.Item2:#.##}hPa");
                     }
+                    break;
+                // change automatic HVAC toggle
+                case "a":
+                    {
+                        autoRelay = !autoRelay;
+                        Console.WriteLine($"Automatic relay toggle {(autoRelay ? "ON" : "OFF")}");
+                    }
+                    break;
+                // update auto toggle temperature limit
+                case "l":
+                    UpdateTemperatureLimit();
                     break;
                 default:
                     Console.WriteLine("Unknown command");
@@ -330,19 +382,50 @@ namespace viceroy
         void DisplayMenu()
         {
             string hvac_status = HVAC_On ? "Off" : "On";
+            string auto_status = autoRelay ? "Off": "On";
             string transmit_status = (!IsTransmitting()) ? "Transmit" : "Stop Transmitting";
             Console.WriteLine("---------------");
             Console.WriteLine("RDTMS v1.0 Menu");
             Console.WriteLine("---------------");
-            Console.WriteLine("\"S\": - display current temperature/pressure");
-            Console.WriteLine($"\"H\": - turn HVAC {hvac_status}");
-            Console.WriteLine($"\"T\": - {transmit_status} Telemetry To Azure IoT Hub service");
+            Console.WriteLine("\"S\": - Display current temperature/pressure");
+            Console.WriteLine("\"H\": - Toggle HVAC");
+            Console.WriteLine($"\"A\": - Turn auto HVAC toggle {auto_status}");
+            Console.WriteLine($"\"T\": - {transmit_status} telemetry to Azure IoT Hub");
             Console.WriteLine($"\"I\": - Change telemetry transmit interval (currently {TransmitInterval}ms)");
+            Console.WriteLine($"\"L\": - Change temperature limit (currently {temperatureLimit}dF)");
             Console.WriteLine("\"X:\" - Close the RDTMS driver");
             Console.Write("Command:-> ");
         }
 
-        void LcdUpdateTask()
+        void AutoUpdate()
+        {
+            // read data from sensor and format string for LCD
+            var output = ReadBmp280();
+            DateTime currentDateTime = DateTime.Now;
+            string formattedDateTime = currentDateTime.ToString("HH:mm:ss");
+            string lcd_msg = $"{formattedDateTime}\nT:{output.Item1:0.#}F\nP:{output.Item2:#.#}hPa";
+            lcd_writer.WriteMessage(lcd_msg);
+
+            // toggle relay if necessary
+            if (autoRelay)
+            {
+                lock (tempLimitLockObj)
+                {
+                    // HVAC is on and temperature is below limit
+                    if (HVAC_On && output.Item1 < temperatureLimit)
+                    {
+                        External_HVAC(false, "HVAC turned off automatically", false);
+                    }
+                    // HVAC is off and temperature is above limit
+                    else if (!HVAC_On && output.Item1 > temperatureLimit)
+                    {
+                        External_HVAC(true, "HVAC turned on automatically", false);
+                    }
+                }
+            }
+        }
+
+        void AutoUpdateTask()
         {
             // create a Task to update the LCD every 2 seconds
             lcdTask = Task.Run(() =>
@@ -353,14 +436,10 @@ namespace viceroy
                     // lock LCD during write
                     lock (lcdLockObj)
                     {
-                        // read data from sensor and format string for LCD
-                        var output = ReadBmp280();
-                        DateTime currentDateTime = DateTime.Now;
-                        string formattedDateTime = currentDateTime.ToString("HH:mm:ss");
-                        string lcd_msg = $"{formattedDateTime}\nT:{output.Item1:0.#}F\nP:{output.Item2:#.#}hPa";
-                        lcd_writer.WriteMessage(lcd_msg);
+                        AutoUpdate();
                     }
 
+                    // only run every 2 seconds
                     Thread.Sleep(2000);
                 }
             });
@@ -370,7 +449,7 @@ namespace viceroy
         {
             // create a Task to connect to asychronously to the IoT hub:
             // see background info here: https://dotnettutorials.net/lesson/asynchronous-programming-in-csharp/
-            LcdUpdateTask();
+            AutoUpdateTask();
 
             driverTask = Task.Run(() =>
             {

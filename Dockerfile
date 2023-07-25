@@ -6,7 +6,7 @@ WORKDIR /code
 # install Node.js
 # https://stackoverflow.com/a/57546198
 ENV NODE_VERSION=18.17.0
-RUN apt-get update && apt-get install -y curl openssh-server
+RUN apt-get update && apt-get install -y curl openssh-server rsync
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
 ENV NVM_DIR=/root/.nvm
 RUN . "$NVM_DIR/nvm.sh" && nvm install ${NODE_VERSION}

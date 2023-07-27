@@ -2,6 +2,7 @@
 
 RTDMS (Remote Datacenter Temperature Management System) demonstration using mentor Mike Corley's [VICEROY RTDMS tutorial](https://github.com/mwcorley79/VICEROY_RTDMS).
 The tutorial provided hardware setup instruction and driver skeleton code.
+![HVAC Breadboard](hvac-breadboard.jpg)
 
 ## Implementation
 
@@ -21,7 +22,7 @@ The [Dockerfile](Dockerfile) includes the development environment build instruct
 RTDMS transmits temperature/pressure telemetry to an Azure IoT Hub in user defined intervals.
 These data point are then visible in a [web app](web-apps-node-iot-hub-data-visualization/README.md) hosted on the [cloud](https://hvac-visualizer-web-app.azurewebsites.net/).
 Azure's serverless functionality abstracts much of this hosting from the user, making it easy to quickly deploy.
-An IoT Hub Trigger built on Azure Functions is called whenever the IoT Hub receives a message, and uses an [IFTTT webhook](https://ifttt.com/) to send an email to an HVAC operator if the device status changes.
+An IoT Hub Trigger built on Azure Functions is called whenever the IoT Hub receives a message. This function determines whether to toggle the HVAC relay, and sends a Cloud-to-Device message if it changes state. It then uses an [IFTTT webhook](https://ifttt.com/) to email an HVAC operator about the automatic change.
 
 ### Acknowledgement
 

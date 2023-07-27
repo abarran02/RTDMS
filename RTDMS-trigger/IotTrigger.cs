@@ -1,5 +1,6 @@
 using IotHubTrigger = Microsoft.Azure.WebJobs.EventHubTriggerAttribute;
 
+using Microsoft.Azure.Devices;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Host;
 using Azure.Messaging.EventHubs;
@@ -15,12 +16,14 @@ namespace viceroy
 {
     public class IotTrigger
     {
-        static int temperatureThreshold = 76;
         private static HttpClient client = new HttpClient();
         static int minimumEmailInterval = 3600000; // minimum milliseconds between emails, no more than 30/day for IFTTT free tier
         static DateTime nextEmailTime = new DateTime();
         public record ShortTelem(string deviceId, double temperature, double pressure); // IFTTT limits JSON payloads to 3 items
+
+        // retrieve environment variables, must be set in local.settings.json or in Azure Host Keys
         static string iftttUrl = System.Environment.GetEnvironmentVariable("IftttUrl", EnvironmentVariableTarget.Process);
+        static string connectionString = System.Environment.GetEnvironmentVariable("ConnectionString", EnvironmentVariableTarget.Process);
 
         [FunctionName("IotTrigger")]
         public static async Task Run([IotHubTrigger("messages/events", Connection = "ConnectionString")] EventData message, ILogger log)
@@ -32,10 +35,25 @@ namespace viceroy
             Telem? telemetryDataPoint = JsonSerializer.Deserialize<Telem>(jsonPayload);
             #nullable disable
 
-            // check whether current temp is above threshold and past minimum email time
-            if (telemetryDataPoint.temperature > temperatureThreshold && DateTime.Now > nextEmailTime)
+            if (telemetryDataPoint.temperature < telemetryDataPoint.temperatureLimit
+                && telemetryDataPoint.hvacOn
+                && telemetryDataPoint.autoRelay)
             {
-                await SendEmailNotification(telemetryDataPoint, log);
+                // temperature below threshold, turn HVAC off
+                await SendHvacControlC2d("ControlRelay", telemetryDataPoint.deviceId, false);
+            }
+            else if (telemetryDataPoint.temperature > telemetryDataPoint.temperatureLimit
+                && !telemetryDataPoint.hvacOn
+                && telemetryDataPoint.autoRelay)
+            {
+                // temperature exceeds threshold, turn HVAC on
+                await SendHvacControlC2d("ControlRelay", telemetryDataPoint.deviceId, true);
+
+                // check if past minimum email time
+                if (DateTime.Now > nextEmailTime)
+                {
+                    await SendEmailNotification(telemetryDataPoint, log);
+                }
             }
         }
 
@@ -67,6 +85,24 @@ namespace viceroy
                 var nextEmailString = nextEmailTime.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 log.LogError($"IFTTT webhook failed. Retrying at {nextEmailString}.");
             }
+        }
+
+        public static async Task SendHvacControlC2d(string clientMethodName, string deviceId, bool onoff)
+        {
+            // initialize method and message
+            var methodInvocation = new CloudToDeviceMethod(clientMethodName)
+            {
+                ResponseTimeout = TimeSpan.FromSeconds(30)
+            };
+            var c2dMessage = new { onoff = onoff };
+            string c2dMessageString = System.Text.Json.JsonSerializer.Serialize(c2dMessage);
+
+            // add JSON payload to C2D message
+            methodInvocation.SetPayloadJson(c2dMessageString);
+
+            // connect to device and send C2D message
+            ServiceClient serviceClient = ServiceClient.CreateFromConnectionString(connectionString);
+            await serviceClient.InvokeDeviceMethodAsync(deviceId, methodInvocation);
         }
     }
 }

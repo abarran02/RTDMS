@@ -13,5 +13,8 @@ namespace viceroy
         public string deviceId { get; set; }
         public double temperature { get; set; }
         public double pressure { get; set; }
+        public bool hvacOn { get; set; }
+        public bool autoRelay { get; set; }
+        public double temperatureLimit { get; set; }
     }
 }

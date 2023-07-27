@@ -203,25 +203,30 @@ namespace viceroy
 
             lock (tempLimitLockObj)
             {
-                // verify that the user input is valid
-                if (Int32.TryParse(tempLimitRaw, out int tempLimitNew))
+                TemperatureLimitParser(tempLimitRaw);
+            }
+        }
+
+        void TemperatureLimitParser(string tempLimitRaw)
+        {
+            // verify that the user input is valid
+            if (Int32.TryParse(tempLimitRaw, out int tempLimitNew))
+            {
+                if (tempLimitNew < 1)
                 {
-                    if (tempLimitNew < 1)
-                    {
-                        Console.WriteLine("Temperature limit must be greater than 1ms");
-                    }
-                    else
-                    {
-                        // set the temperatureLimit variable with value read from the user
-                        temperatureLimit = tempLimitNew;
-                        // write a message on the console (STDOUT), indicating the new temp limit
-                        Console.WriteLine($"Temperature limit set to {tempLimitRaw}");
-                    }
+                    Console.WriteLine("Temperature limit must be greater than 1ms");
                 }
                 else
                 {
-                    Console.WriteLine($"Unable to parse '{tempLimitRaw}'");
+                    // set the temperatureLimit variable with value read from the user
+                    temperatureLimit = tempLimitNew;
+                    // write a message on the console (STDOUT), indicating the new temp limit
+                    Console.WriteLine($"Temperature limit set to {tempLimitRaw}");
                 }
+            }
+            else
+            {
+                Console.WriteLine($"Unable to parse '{tempLimitRaw}'");
             }
         }
 
@@ -233,7 +238,10 @@ namespace viceroy
                 deviceId = device_id,
                 temperature = temp,
                 pressure = press,
-                messageId = transmitCount++
+                messageId = transmitCount++,
+                hvacOn = HVAC_On,
+                temperatureLimit = temperatureLimit,
+                autoRelay = autoRelay
             };
 
             // with help from: https://microsoft.github.io/AzureTipsAndTricks/blog/tip114.html
@@ -405,24 +413,6 @@ namespace viceroy
             string formattedDateTime = currentDateTime.ToString("HH:mm:ss");
             string lcd_msg = $"{formattedDateTime}\nT:{output.Item1:0.#}F\nP:{output.Item2:#.#}hPa";
             lcd_writer.WriteMessage(lcd_msg);
-
-            // toggle relay if necessary
-            if (autoRelay)
-            {
-                lock (tempLimitLockObj)
-                {
-                    // HVAC is on and temperature is below limit
-                    if (HVAC_On && output.Item1 < temperatureLimit)
-                    {
-                        External_HVAC(false, "HVAC turned off automatically", false);
-                    }
-                    // HVAC is off and temperature is above limit
-                    else if (!HVAC_On && output.Item1 > temperatureLimit)
-                    {
-                        External_HVAC(true, "HVAC turned on automatically", false);
-                    }
-                }
-            }
         }
 
         void AutoUpdateTask()

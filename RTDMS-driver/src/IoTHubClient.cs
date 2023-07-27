@@ -37,11 +37,7 @@ namespace viceroy
             {
                 // open the connection to the Azure IoT Hub
                 deviceClient.OpenAsync().Wait();
-
                 deviceClient.SetMethodHandlerAsync("ControlRelay", ControlRelay, null).Wait();
-
-                //on and off (boolean) message type:
-                //await deviceClient.SetMethodHandlerAsync("ControlLED", ControlLED, null);
                 Connected = true;
             }
         }
@@ -60,17 +56,15 @@ namespace viceroy
             Console.WriteLine(String.Format("method ControlRelay: {0}", methodRequest.DataAsJson));
             try
             {
-                // OnOffMethodData m = JsonConvert.DeserializeObject<OnOffMethodData>(methodRequest.DataAsJson);
                 OnOffMethodData status = JsonSerializer.Deserialize<OnOffMethodData>(methodRequest.DataAsJson);
                 _driver.External_HVAC(status.onoff, (status.onoff) ? "HVAC Remote On" : "HVAC_Remote Off");
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"{ex.Message}");
-                //   this.callMeLogger(String.Format("Wrong message: {0}", methodRequest.DataAsJson));
                 return Task.FromResult(new MethodResponse(400));
             }
-            //this.callMeLogger(methodRequest.DataAsJson);
+
             return Task.FromResult(new MethodResponse(200));
         }
 
